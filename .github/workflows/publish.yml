@@ -1,0 +1,70 @@
+name: Nettside og julemodus
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      christmas:
+        description: Julemodus for alle brukere av neste appversjon
+        required: true
+        type: choice
+        options: [Av, På]
+        default: Av
+      valid_until:
+        description: Siste gyldighetsdato (UTC), YYYY-MM-DD
+        required: true
+        default: '2027-01-15'
+        type: string
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Oppdater administrativ sesonginnstilling
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          CHRISTMAS: ${{ inputs.christmas }}
+          VALID_UNTIL: ${{ inputs.valid_until }}
+        run: |
+          python3 <<'PY'
+          import datetime, json, os
+          enabled = os.environ['CHRISTMAS']
+          assert enabled in ['Av', 'På']
+          until = datetime.date.fromisoformat(os.environ['VALID_UNTIL'])
+          today = datetime.datetime.now(datetime.timezone.utc).date()
+          assert today < until <= today + datetime.timedelta(days=365), 'Velg en fremtidig dato innen ett år.'
+          with open('app-config.json', 'w') as f:
+              json.dump({'schemaVersion': 1, 'christmasEnabled': enabled == 'På', 'validUntil': f'{until}T00:00:00Z'}, f, indent=2)
+              f.write('\n')
+          PY
+          git config user.name 'SmåSeire admin'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add app-config.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'Update seasonal configuration from admin workflow'
+            git push origin HEAD:main
+          fi
+      - uses: actions/configure-pages@v5
+      - name: Klargjør offentlige filer
+        run: |
+          mkdir public
+          cp index.html personvern.html support.html style.css app-config.json public/
+          if [ -d assets ]; then cp -R assets public/; fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - name: Publiser
+        id: deployment
+        uses: actions/deploy-pages@v4
