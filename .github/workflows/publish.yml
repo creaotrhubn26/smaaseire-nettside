@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       christmas:
-        description: Julemodus for alle brukere av neste appversjon
+        description: På tillater juletema i desember, Av deaktiverer for alle
         required: true
         type: choice
         options: [Av, På]
